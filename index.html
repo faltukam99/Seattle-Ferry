@@ -87,7 +87,7 @@
                     `;
 
                     // Sort into Arrivals vs Departures
-                    if (route.DepartingTerminalID === SEATTLE_ID) {
+                 if (route.DepartingTerminalID == 7 || route.DepartingTerminalName.includes("Seattle"))
                         depList.innerHTML += card;
                     } else {
                         arrList.innerHTML += card;
