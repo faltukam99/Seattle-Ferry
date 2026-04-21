@@ -51,7 +51,7 @@
         try {
             // We call our internal API route instead of WSDOT directly.
             // This bypasses CORS because it's a "same-origin" request.
-            const response = await fetch('/api/ferries');
+            const response = await fetch('/api/ferries.js');
             
             if (!response.ok) throw new Error('API route failed');
             
