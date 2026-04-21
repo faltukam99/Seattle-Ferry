@@ -81,4 +81,48 @@
                     route.Times.forEach(trip => {
                         if (!trip.DepartingTime) return;
 
-                        // Formatting
+                        // Formatting the Time (e.g., 14:30 -> 2:30 PM)
+                        const rawTime = trip.DepartingTime.includes('T') ? trip.DepartingTime.split('T')[1] : trip.DepartingTime;
+                        const [h, m] = rawTime.split(':');
+                        const hr = parseInt(h);
+                        const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
+
+                        const card = `
+                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 ferry-card">
+                                <div class="flex justify-between items-center">
+                                    <span class="font-bold text-slate-800 text-lg">${route.ArrivingDescription}</span>
+                                    <span class="text-xl font-black text-blue-600">${displayTime}</span>
+                                </div>
+                                <div class="flex items-center mt-3 text-slate-400 text-[10px] font-bold uppercase tracking-widest">
+                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                                    ${trip.VesselName || "Vessel TBA"}
+                                </div>
+                            </div>
+                        `;
+
+                        if (isDeparture) {
+                            depList.innerHTML += card;
+                        } else {
+                            arrList.innerHTML += card;
+                        }
+                    });
+                });
+
+                status.innerText = `Updated: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                status.classList.remove('text-red-500');
+
+            } catch (error) {
+                console.error("Ferry Tracker Error:", error);
+                status.innerText = "Error: " + error.message + ". Check Vercel Functions logs.";
+                status.classList.add('text-red-500');
+            }
+        }
+
+        // Initial Load
+        fetchFerryData();
+
+        // Refresh every 60 seconds
+        setInterval(fetchFerryData, 60000);
+    </script>
+</body>
+</html>
