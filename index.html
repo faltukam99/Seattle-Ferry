@@ -2,21 +2,22 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Seattle Ferry Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seattle Ferry Live</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .card { transition: all 0.2s ease; }
+        .card:hover { border-color: #3b82f6; transform: translateY(-2px); }
     </style>
 </head>
-<body class="p-6 md:p-12">
-    <div class="max-w-6xl mx-auto">
-        <header class="mb-10 flex flex-col md:flex-row justify-between items-end gap-4">
-            <div>
-                <h1 class="text-4xl font-black text-slate-900 tracking-tight">Seattle Ferry Terminal</h1>
-                <p id="clock" class="text-blue-600 font-bold uppercase tracking-widest text-xs mt-2 italic"></p>
-            </div>
-            <select id="terminal-select" class="bg-white border-2 border-slate-200 rounded-2xl px-6 py-3 font-bold text-slate-700 outline-none focus:border-blue-500 shadow-sm">
+<body class="p-4 md:p-10">
+
+    <div class="max-w-5xl mx-auto">
+        <header class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Tracker</h1>
+            <select id="terminal-select" class="w-full md:w-64 bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none">
                 <option value="7">Seattle (Pier 52)</option>
                 <option value="3">Bainbridge Island</option>
                 <option value="4">Bremerton</option>
@@ -25,15 +26,14 @@
             </select>
         </header>
 
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-12">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <section>
-                <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b pb-2">Outbound Departures</h2>
-                <div id="dep-list" class="space-y-4"></div>
+                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Departures</h2>
+                <div id="dep-list" class="space-y-3"></div>
             </section>
-
             <section>
-                <h2 class="text-xs font-black text-slate-400 uppercase tracking-[0.3em] mb-6 border-b pb-2">Inbound Arrivals</h2>
-                <div id="arr-list" class="space-y-4"></div>
+                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Arrivals</h2>
+                <div id="arr-list" class="space-y-3"></div>
             </section>
         </div>
     </div>
@@ -41,59 +41,48 @@
     <script>
         const terminalSelect = document.getElementById('terminal-select');
         
-        function parseWSDOTDate(jsonDate) {
-            const timestamp = parseInt(jsonDate.replace(/\/Date\((\d+).*/, '$1'));
-            return new Date(timestamp);
-        }
-
-        async function updateDashboard() {
-            const tid = terminalSelect.value;
-            document.getElementById('clock').innerText = `Syncing: ${new Date().toLocaleTimeString()}`;
-            
-            try {
-                const response = await fetch(`/api/ferries?terminalId=${tid}`);
-                const data = await response.json();
-                
-                const depList = document.getElementById('dep-list');
-                const arrList = document.getElementById('arr-list');
-                depList.innerHTML = ''; 
-                arrList.innerHTML = '';
-
-                data.routes.forEach(route => {
-                    route.Sailings.forEach(sailing => {
-                        const time = parseWSDOTDate(sailing.Time);
-                        const displayTime = time.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-                        
-                        const isPast = time < new Date();
-                        const card = `
-                            <div class="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex justify-between items-center ${isPast ? 'opacity-40 grayscale' : ''}">
-                                <div>
-                                    <p class="text-[10px] font-black text-blue-500 uppercase">${route.ArrivingTerminalName}</p>
-                                    <p class="text-xl font-black text-slate-800 tracking-tight">${displayTime}</p>
-                                </div>
-                                <div class="text-right">
-                                    <p class="text-[9px] font-bold text-slate-400 uppercase tracking-widest">${sailing.VesselName || 'Vessel TBA'}</p>
-                                    <div class="inline-block px-2 py-1 bg-slate-100 rounded text-[9px] font-black text-slate-500 mt-1 uppercase">On Time</div>
-                                </div>
-                            </div>
-                        `;
-
-                        // If the origin is our selected terminal, it's a departure
-                        if (String(route.DepartingTerminalID) === String(tid)) {
-                            depList.innerHTML += card;
-                        } else {
-                            arrList.innerHTML += card;
-                        }
-                    });
-                });
-            } catch (e) {
-                console.error("Fetch failed", e);
+        function parseTime(timeStr) {
+            if (!timeStr) return "TBA";
+            // Handle XML format (2026-04-21T15:30:00) or JSON format (/Date/)
+            let date;
+            if (timeStr.includes('Date')) {
+                date = new Date(parseInt(timeStr.match(/\d+/)[0]));
+            } else {
+                date = new Date(timeStr);
             }
+            return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         }
 
-        terminalSelect.addEventListener('change', updateDashboard);
-        updateDashboard();
-        setInterval(updateDashboard, 60000);
+        async function update() {
+            const tid = terminalSelect.value;
+            const res = await fetch(`/api/ferries?terminalId=${tid}`);
+            const data = await res.json();
+            
+            const depList = document.getElementById('dep-list');
+            const arrList = document.getElementById('arr-list');
+            depList.innerHTML = ''; arrList.innerHTML = '';
+
+            data.TerminalComboDetails.forEach(route => {
+                const isDep = String(route.DepartingTerminalID) === String(tid);
+                
+                route.Times.forEach(t => {
+                    const card = `
+                        <div class="bg-white p-5 rounded-2xl border border-slate-200 card shadow-sm flex justify-between items-center">
+                            <div>
+                                <p class="text-[10px] font-black text-blue-500 uppercase">${route.ArrivingDescription}</p>
+                                <p class="text-xl font-black text-slate-800">${parseTime(t.DepartingTime)}</p>
+                            </div>
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${t.VesselName}</p>
+                        </div>
+                    `;
+                    if (isDep) depList.innerHTML += card;
+                    else arrList.innerHTML += card;
+                });
+            });
+        }
+
+        terminalSelect.addEventListener('change', update);
+        update();
     </script>
 </body>
 </html>
