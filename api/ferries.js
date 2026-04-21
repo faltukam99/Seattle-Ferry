@@ -3,36 +3,37 @@ export default async function handler(req, res) {
   const { terminalId } = req.query;
   const tid = terminalId || '7';
 
-  // We are changing the URL from .../terminaltoday/${tid} 
-  // to the query string version: .../terminaltoday?terminalid=${tid}
+  // Aligned with WSDOT REST documentation:
   const url = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday?terminalid=${tid}&apiaccesscode=${API_KEY}`;
 
   try {
     const response = await fetch(url, {
       method: 'GET',
       headers: {
-        'Accept': 'application/json'
+        // Documentation specifies these exact headers for data retrieval
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
       }
     });
 
-    const data = await response.text();
-    
-    // Check if we hit another "Service" page
-    if (data.includes('<html')) {
-        return res.status(200).json({ 
-            error: "Still hitting help page", 
-            url_attempted: url,
-            content: data.substring(0, 100) 
-        });
-    }
+    const text = await response.text();
 
+    // Check if the response is valid JSON
     try {
-        const jsonData = JSON.parse(data);
-        res.setHeader('Content-Type', 'application/json');
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        return res.status(200).json(jsonData);
+      const data = JSON.parse(text);
+      
+      // Add standard CORS headers for your frontend
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json');
+      
+      return res.status(200).json(data);
     } catch (e) {
-        return res.status(200).json({ error: "Data received but not JSON", raw: data });
+      // If parsing fails, we are likely still getting that help page or an error
+      return res.status(200).json({ 
+        error: "Legacy API Format Error", 
+        message: "The server returned a non-JSON response.",
+        raw_start: text.substring(0, 150) 
+      });
     }
 
   } catch (error) {
