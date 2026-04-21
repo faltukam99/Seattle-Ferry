@@ -8,21 +8,23 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
         body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
-        .card { transition: all 0.2s ease; }
-        .card:hover { border-color: #3b82f6; transform: translateY(-2px); }
     </style>
 </head>
 <body class="p-4 md:p-10">
-
+boom
     <div class="max-w-5xl mx-auto">
         <header class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Tracker</h1>
-            <select id="terminal-select" class="w-full md:w-64 bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none">
+            <div>
+                <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Tracker</h1>
+                <p id="status" class="text-[10px] font-bold text-blue-500 uppercase tracking-widest mt-1">Live WSDOT Feed</p>
+            </div>
+            <select id="terminal-select" class="w-full md:w-64 bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="7">Seattle (Pier 52)</option>
                 <option value="3">Bainbridge Island</option>
                 <option value="4">Bremerton</option>
                 <option value="9">Edmonds</option>
                 <option value="15">Kingston</option>
+                <option value="11">Fauntleroy</option>
             </select>
         </header>
 
@@ -40,49 +42,56 @@
 
     <script>
         const terminalSelect = document.getElementById('terminal-select');
-        
-        function parseTime(timeStr) {
-            if (!timeStr) return "TBA";
-            // Handle XML format (2026-04-21T15:30:00) or JSON format (/Date/)
-            let date;
-            if (timeStr.includes('Date')) {
-                date = new Date(parseInt(timeStr.match(/\d+/)[0]));
-            } else {
-                date = new Date(timeStr);
-            }
-            return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+        const status = document.getElementById('status');
+
+        function parseTime(t) {
+            if (!t) return "TBA";
+            let d = t.includes('Date') ? new Date(parseInt(t.match(/\d+/)[0])) : new Date(t);
+            return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         }
 
         async function update() {
             const tid = terminalSelect.value;
-            const res = await fetch(`/api/ferries?terminalId=${tid}`);
-            const data = await res.json();
+            status.innerText = "Syncing...";
             
-            const depList = document.getElementById('dep-list');
-            const arrList = document.getElementById('arr-list');
-            depList.innerHTML = ''; arrList.innerHTML = '';
-
-            data.TerminalComboDetails.forEach(route => {
-                const isDep = String(route.DepartingTerminalID) === String(tid);
+            try {
+                const r = await fetch(`/api/ferries?terminalId=${tid}`);
+                const data = await r.json();
                 
-                route.Times.forEach(t => {
-                    const card = `
-                        <div class="bg-white p-5 rounded-2xl border border-slate-200 card shadow-sm flex justify-between items-center">
-                            <div>
-                                <p class="text-[10px] font-black text-blue-500 uppercase">${route.ArrivingDescription}</p>
-                                <p class="text-xl font-black text-slate-800">${parseTime(t.DepartingTime)}</p>
+                const depList = document.getElementById('dep-list');
+                const arrList = document.getElementById('arr-list');
+                depList.innerHTML = ''; arrList.innerHTML = '';
+
+                if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
+                    depList.innerHTML = arrList.innerHTML = '<div class="p-6 bg-white rounded-2xl text-slate-400 text-sm font-bold border-2 border-dashed">No sailings found</div>';
+                    return;
+                }
+
+                data.TerminalComboDetails.forEach(route => {
+                    const isDep = String(route.DepartingTerminalID) === String(tid);
+                    route.Times.forEach(trip => {
+                        const card = `
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+                                <div>
+                                    <p class="text-[9px] font-black text-blue-500 uppercase">${route.ArrivingDescription}</p>
+                                    <p class="text-xl font-black text-slate-800">${parseTime(trip.DepartingTime)}</p>
+                                </div>
+                                <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${trip.VesselName}</p>
                             </div>
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">${t.VesselName}</p>
-                        </div>
-                    `;
-                    if (isDep) depList.innerHTML += card;
-                    else arrList.innerHTML += card;
+                        `;
+                        if (isDep) depList.innerHTML += card;
+                        else arrList.innerHTML += card;
+                    });
                 });
-            });
+                status.innerText = "Live";
+            } catch (err) {
+                status.innerText = "Error Connecting";
+            }
         }
 
         terminalSelect.addEventListener('change', update);
         update();
+        setInterval(update, 60000);
     </script>
 </body>
 </html>
