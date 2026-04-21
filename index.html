@@ -3,126 +3,143 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seattle Ferry Tracker</title>
+    <title>WSDOT Ferry Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
-        .ferry-card { transition: transform 0.2s; }
-        .ferry-card:hover { transform: translateY(-2px); }
+        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        .card-anim { transition: all 0.2s ease; }
+        .card-anim:hover { transform: translateY(-3px); border-color: #3b82f6; }
     </style>
 </head>
-<body class="p-4 md:p-8">
+<body class="p-4 md:p-10">
 
-    <div class="max-w-4xl mx-auto">
-        <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+    <div class="max-w-5xl mx-auto">
+        <div class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div>
-                <h1 class="text-3xl font-black text-slate-900 tracking-tight">Seattle Terminal</h1>
-                <p id="status" class="text-sm text-slate-500 font-medium">Connecting to WSDOT...</p>
+                <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Schedule</h1>
+                <div class="flex items-center mt-2">
+                    <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse mr-2"></div>
+                    <p id="status" class="text-xs font-bold text-slate-400 uppercase tracking-widest">Initialising...</p>
+                </div>
             </div>
-            <div class="flex gap-2">
-                <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider">Live Schedule</span>
+            
+            <div class="flex flex-col gap-1">
+                <label class="text-[10px] font-black text-slate-400 uppercase ml-1">Select Terminal</label>
+                <select id="terminal-select" class="appearance-none bg-slate-100 border-none px-4 py-3 rounded-xl font-bold text-slate-700 cursor-pointer hover:bg-slate-200 transition-colors outline-none focus:ring-2 focus:ring-blue-500">
+                    <option value="7">Seattle (Pier 52)</option>
+                    <option value="3">Bainbridge Island</option>
+                    <option value="4">Bremerton</option>
+                    <option value="11">Fauntleroy (West Seattle)</option>
+                    <option value="22">Vashon Island</option>
+                    <option value="19">Southworth</option>
+                    <option value="9">Edmonds</option>
+                    <option value="15">Kingston</option>
+                    <option value="14">Mukilteo</option>
+                    <option value="10">Clinton</option>
+                </select>
             </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-            
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-10">
             <div>
-                <h2 class="text-lg font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center">
-                    <span class="mr-2">🚢</span> Departures
-                </h2>
-                <div id="departure-list" class="space-y-3">
-                    </div>
+                <h3 class="text-sm font-black text-blue-600 uppercase tracking-[0.2em] mb-6 flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M5 10l7-7m0 0l7 7m-7-7v18" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    Departures
+                </h3>
+                <div id="departure-list" class="space-y-4"></div>
             </div>
 
             <div>
-                <h2 class="text-lg font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center">
-                    <span class="mr-2">⚓</span> Arrivals
-                </h2>
-                <div id="arrival-list" class="space-y-3">
-                    </div>
+                <h3 class="text-sm font-black text-emerald-600 uppercase tracking-[0.2em] mb-6 flex items-center">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M19 14l-7 7m0 0l-7-7m7 7V3" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+                    Arrivals
+                </h3>
+                <div id="arrival-list" class="space-y-4"></div>
             </div>
-
         </div>
     </div>
 
     <script>
-        const SEATTLE_ID = 7; 
+        const terminalSelect = document.getElementById('terminal-select');
 
-        async function fetchFerryData() {
+        async function updateSchedule() {
+            const tid = terminalSelect.value;
             const status = document.getElementById('status');
             const depList = document.getElementById('departure-list');
             const arrList = document.getElementById('arrival-list');
 
+            status.innerText = "Fetching data...";
+
             try {
-                // Call your Vercel Serverless Function
-                const response = await fetch('/api/ferries');
-                
-                if (!response.ok) {
-                    throw new Error(`API Error (${response.status})`);
-                }
+                const response = await fetch(`/api/ferries?terminalId=${tid}`);
+                if (!response.ok) throw new Error("Connection failed");
                 
                 const data = await response.json();
-
-                // Clear current lists
+                
                 depList.innerHTML = '';
                 arrList.innerHTML = '';
 
                 if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
-                    status.innerText = "No ferry data available right now.";
+                    const emptyMsg = `<div class="text-slate-400 font-medium italic p-4">No more sailings today</div>`;
+                    depList.innerHTML = emptyMsg;
+                    arrList.innerHTML = emptyMsg;
+                    status.innerText = "Schedule empty";
                     return;
                 }
 
                 data.TerminalComboDetails.forEach(route => {
-                    // Logic to determine if this is a boat LEAVING Seattle
-                    const isDeparture = (route.DepartingTerminalID == SEATTLE_ID) || 
-                                        (route.DepartingTerminalName && route.DepartingTerminalName.toLowerCase().includes("seattle"));
+                    // Decide if it's a Departure based on the selected ID
+                    const isDep = route.DepartingTerminalID == tid;
 
                     route.Times.forEach(trip => {
                         if (!trip.DepartingTime) return;
 
-                        // Formatting the Time (e.g., 14:30 -> 2:30 PM)
-                        const rawTime = trip.DepartingTime.includes('T') ? trip.DepartingTime.split('T')[1] : trip.DepartingTime;
-                        const [h, m] = rawTime.split(':');
+                        // Parse "14:30:00" or ISO format
+                        const timeStr = trip.DepartingTime.includes('T') ? trip.DepartingTime.split('T')[1] : trip.DepartingTime;
+                        const [h, m] = timeStr.split(':');
                         const hr = parseInt(h);
-                        const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
+                        const ampm = hr >= 12 ? 'PM' : 'AM';
+                        const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${ampm}`;
 
                         const card = `
-                            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 ferry-card">
-                                <div class="flex justify-between items-center">
-                                    <span class="font-bold text-slate-800 text-lg">${route.ArrivingDescription}</span>
-                                    <span class="text-xl font-black text-blue-600">${displayTime}</span>
+                            <div class="bg-white p-5 rounded-2xl border border-slate-200 card-anim shadow-sm">
+                                <div class="flex justify-between items-start">
+                                    <div class="flex flex-col">
+                                        <span class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Destination</span>
+                                        <span class="font-bold text-slate-800 text-lg leading-tight">${route.ArrivingDescription}</span>
+                                    </div>
+                                    <div class="text-right">
+                                        <span class="text-2xl font-black text-slate-900">${displayTime}</span>
+                                    </div>
                                 </div>
-                                <div class="flex items-center mt-3 text-slate-400 text-[10px] font-bold uppercase tracking-widest">
-                                    <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                    ${trip.VesselName || "Vessel TBA"}
+                                <div class="mt-4 pt-4 border-t border-slate-50 flex items-center justify-between">
+                                    <span class="text-[10px] font-bold text-slate-400 uppercase italic">${trip.VesselName || "TBA"}</span>
+                                    <span class="text-[10px] px-2 py-1 bg-slate-100 rounded text-slate-500 font-bold">On Time</span>
                                 </div>
                             </div>
                         `;
 
-                        if (isDeparture) {
-                            depList.innerHTML += card;
-                        } else {
-                            arrList.innerHTML += card;
-                        }
+                        if (isDep) depList.innerHTML += card;
+                        else arrList.innerHTML += card;
                     });
                 });
 
-                status.innerText = `Updated: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
-                status.classList.remove('text-red-500');
-
-            } catch (error) {
-                console.error("Ferry Tracker Error:", error);
-                status.innerText = "Error: " + error.message + ". Check Vercel Functions logs.";
-                status.classList.add('text-red-500');
+                status.innerText = `Last Updated: ${new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+            } catch (err) {
+                status.innerText = "Offline - Retry in 60s";
+                console.error(err);
             }
         }
 
-        // Initial Load
-        fetchFerryData();
+        // Event listeners
+        terminalSelect.addEventListener('change', updateSchedule);
+        
+        // Load on start
+        updateSchedule();
 
-        // Refresh every 60 seconds
-        setInterval(fetchFerryData, 60000);
+        // Auto-refresh
+        setInterval(updateSchedule, 60000);
     </script>
 </body>
 </html>
