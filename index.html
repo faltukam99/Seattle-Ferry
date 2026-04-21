@@ -41,7 +41,6 @@
         </div>
     </main>
 <script>
-    // Your verified API key and Terminal ID
     const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
     const SEATTLE_ID = 7; 
 
@@ -50,42 +49,43 @@
         const depList = document.getElementById('departure-list');
         const arrList = document.getElementById('arrival-list');
 
-        // 1. Define the original URL
+        // This uses corsproxy.io - a faster and more reliable bridge
         const wsdotUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
-        
-        // 2. Wrap it in the AllOrigins proxy URL to bypass CORS
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(wsdotUrl)}`;
+        const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(wsdotUrl)}`;
 
         try {
             const response = await fetch(proxyUrl);
-            if (!response.ok) throw new Error('Proxy server error');
             
-            const wrapper = await response.json();
+            if (!response.ok) throw new Error('Proxy unreachable');
             
-            // 3. The proxy returns the WSDOT data inside a string called 'contents'
-            const data = JSON.parse(wrapper.contents);
+            const data = await response.json();
             
             depList.innerHTML = '';
             arrList.innerHTML = '';
 
-            if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
-                status.innerText = "No ferry data available right now.";
+            // TerminalToday returns 'TerminalComboDetails'
+            if (!data.TerminalComboDetails) {
+                status.innerText = "Data received, but no schedules found.";
                 return;
             }
 
             data.TerminalComboDetails.forEach(route => {
                 route.Times.forEach(trip => {
-                    const time = trip.DepartingTime.split('T')[1].substring(0, 5);
-                    const destination = route.ArrivingDescription;
-                    const vessel = trip.VesselName || "Vessel TBA";
+                    // Convert 24h "14:35" to 12h "2:35 PM" for better readability
+                    const rawTime = trip.DepartingTime.split('T')[1].substring(0, 5);
+                    const [hours, minutes] = rawTime.split(':');
+                    const period = hours >= 12 ? 'PM' : 'AM';
+                    const displayTime = `${((hours + 11) % 12 + 1)}:${minutes} ${period}`;
 
                     const card = `
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
                             <div class="flex justify-between items-center">
-                                <span class="font-bold text-blue-900">${destination}</span>
-                                <span class="text-lg font-black text-blue-600">${time}</span>
+                                <span class="font-bold text-blue-900">${route.ArrivingDescription}</span>
+                                <span class="text-lg font-black text-blue-600">${displayTime}</span>
                             </div>
-                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">${vessel}</div>
+                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">
+                                ${trip.VesselName || "Vessel TBA"}
+                            </div>
                         </div>
                     `;
 
@@ -97,20 +97,17 @@
                 });
             });
 
-            status.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
+            status.innerText = `Live sync: ${new Date().toLocaleTimeString()}`;
 
         } catch (error) {
-            console.error("Fetch error:", error);
-            status.innerText = "Failed to bypass CORS. Try refreshing.";
+            console.error("CORS still blocking:", error);
+            status.innerText = "CORS bridge failed. Try refreshing in 10 seconds.";
         }
     }
 
-    // Initialize the app
     fetchFerryData();
-    // Refresh every 2 minutes
-    setInterval(fetchFerryData, 120000);
+    setInterval(fetchFerryData, 120000); 
 </script>
-     
 
 </body>
 </html>
