@@ -1,0 +1,10 @@
+{
+  "functions": {
+    "api/ferries.js": {
+      "runtime": "vercel-node@latest"
+    }
+  },
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" }
+  ]
+}
