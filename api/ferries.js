@@ -3,40 +3,62 @@ export default async function handler(req, res) {
   const { terminalId } = req.query;
   const tid = terminalId || '7';
 
-  // STRUCTURE: .../terminaltoday?terminalid={ID}&apiaccesscode={KEY}
-  // No slashes after 'terminaltoday'
-  const url = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday?terminalid=${tid}&apiaccesscode=${API_KEY}`;
+  const soapUrl = 'https://www.wsdot.wa.gov/Ferries/API/Schedule/Service.svc';
+  
+  // The SOAP Envelope specifically for 'GetTerminalComboToday'
+  const soapEnvelope = `
+    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.wsdot.wa.gov/ferries/schedule/">
+       <soapenv:Header/>
+       <soapenv:Body>
+          <sch:GetTerminalComboToday>
+             <sch:terminalID>${tid}</sch:terminalID>
+             <sch:apiAccessCode>${API_KEY}</sch:apiAccessCode>
+          </sch:GetTerminalComboToday>
+       </soapenv:Body>
+    </soapenv:Envelope>
+  `.trim();
 
   try {
-    const response = await fetch(url, {
-      method: 'GET',
+    const response = await fetch(soapUrl, {
+      method: 'POST',
       headers: {
-        'Accept': 'application/json'
-      }
+        'Content-Type': 'text/xml;charset=UTF-8',
+        'SOAPAction': 'http://www.wsdot.wa.gov/ferries/schedule/WSF_x0020_Schedule/GetTerminalComboToday'
+      },
+      body: soapEnvelope
     });
 
-    const text = await response.text();
+    const xml = await response.text();
 
-    // Check if we are still getting HTML
-    if (text.includes('<html')) {
-        return res.status(200).json({ 
-            error: "WSDOT Help Page Triggered", 
-            message: "The server is still refusing the endpoint. Check terminal ID or Key.",
-            attempted_url: url
-        });
-    }
+    // Helper to extract data from XML tags
+    const getTag = (str, tag) => {
+      const match = str.match(new RegExp(`<[^:]*?:?${tag}[^>]*>([\\s\\S]*?)<\\/[^:]*?:?${tag}>`, 'i'));
+      return match ? match[1] : null;
+    };
 
-    try {
-      const data = JSON.parse(text);
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      res.setHeader('Content-Type', 'application/json');
-      return res.status(200).json(data);
-    } catch (e) {
-      return res.status(200).json({ 
-        error: "Parse Error", 
-        raw_data: text.substring(0, 100) 
-      });
-    }
+    // Parse the SOAP response
+    const comboBlocks = xml.match(/<[^:]*?:?TerminalComboDetail>[\s\S]*?<\/[^:]*?:?TerminalComboDetail>/gi) || [];
+    
+    const combos = comboBlocks.map(block => {
+      const arriving = getTag(block, 'ArrivingDescription');
+      const depId = getTag(block, 'DepartingTerminalID');
+      
+      const timeBlocks = block.match(/<[^:]*?:?TerminalTime>[\s\S]*?<\/[^:]*?:?TerminalTime>/gi) || [];
+      const times = timeBlocks.map(t => ({
+        DepartingTime: getTag(t, 'DepartingTime'),
+        VesselName: getTag(t, 'VesselName')
+      }));
+
+      return {
+        ArrivingDescription: arriving,
+        DepartingTerminalID: depId,
+        Times: times
+      };
+    });
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/json');
+    return res.status(200).json({ TerminalComboDetails: combos });
 
   } catch (error) {
     return res.status(500).json({ error: error.message });
