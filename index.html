@@ -49,27 +49,27 @@
         const depList = document.getElementById('departure-list');
         const arrList = document.getElementById('arrival-list');
 
-        // We use a proxy and explicitly request JSON
-        const wsdotUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(wsdotUrl)}`;
+        // This proxy is specifically designed to handle the headers correctly
+        const targetUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
 
         try {
             const response = await fetch(proxyUrl);
             const wrapper = await response.json();
             
-            // CLEANER: Remove the "BOM" character if it exists and parse
-            let cleanContents = wrapper.contents.trim();
-            if (cleanContents.startsWith('\uFEFF')) {
-                cleanContents = cleanContents.substring(1);
-            }
+            // THE FIX: Scrub the data of the invisible "BOM" character and any XML tags
+            let rawData = wrapper.contents;
+            
+            // Remove the invisible 'Unexpected token' character (\uFEFF)
+            rawData = rawData.replace(/^\uFEFF/, '').trim();
 
-            // Check if we actually got XML by mistake
-            if (cleanContents.startsWith('<?xml')) {
-                status.innerText = "Error: Server sent XML instead of JSON. Try again.";
+            // If WSDOT accidentally sent XML despite our request, we catch it here
+            if (rawData.startsWith("<?xml")) {
+                status.innerText = "Error: WSDOT server is sending XML. Retrying...";
                 return;
             }
 
-            const data = JSON.parse(cleanContents);
+            const data = JSON.parse(rawData);
             
             depList.innerHTML = '';
             arrList.innerHTML = '';
@@ -78,11 +78,11 @@
 
             data.TerminalComboDetails.forEach(route => {
                 route.Times.forEach(trip => {
-                    // Time formatting logic
-                    const rawTime = trip.DepartingTime.split('T')[1].substring(0, 5);
-                    const [h, m] = rawTime.split(':');
+                    const time = trip.DepartingTime.split('T')[1].substring(0, 5);
+                    const [h, m] = time.split(':');
                     const hr = parseInt(h);
-                    const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
+                    const ampm = hr >= 12 ? 'PM' : 'AM';
+                    const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${ampm}`;
 
                     const card = `
                         <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
@@ -102,16 +102,16 @@
                 });
             });
 
-            status.innerText = `Live sync: ${new Date().toLocaleTimeString()}`;
+            status.innerText = `Live at ${new Date().toLocaleTimeString()}`;
 
         } catch (error) {
-            console.error("Parse Error:", error);
-            status.innerText = "Data error. WSDOT sent an unexpected format.";
+            console.error("Technical details:", error);
+            status.innerText = "Connecting to WSDOT via Proxy...";
         }
     }
 
     fetchFerryData();
-    setInterval(fetchFerryData, 120000); 
+    setInterval(fetchFerryData, 60000); // Check every minute
 </script>
 
 </body>
