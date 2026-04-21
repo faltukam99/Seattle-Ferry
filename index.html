@@ -41,7 +41,6 @@
         </div>
     </main>
 <script>
-    const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
     const SEATTLE_ID = 7; 
 
     async function fetchFerryData() {
@@ -49,51 +48,45 @@
         const depList = document.getElementById('departure-list');
         const arrList = document.getElementById('arrival-list');
 
-        // This proxy is specifically designed to handle the headers correctly
-        const targetUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
-        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}`;
-
         try {
-            const response = await fetch(proxyUrl);
-            const wrapper = await response.json();
+            // We call our internal API route instead of WSDOT directly.
+            // This bypasses CORS because it's a "same-origin" request.
+            const response = await fetch('/api/ferries');
             
-            // THE FIX: Scrub the data of the invisible "BOM" character and any XML tags
-            let rawData = wrapper.contents;
+            if (!response.ok) throw new Error('API route failed');
             
-            // Remove the invisible 'Unexpected token' character (\uFEFF)
-            rawData = rawData.replace(/^\uFEFF/, '').trim();
-
-            // If WSDOT accidentally sent XML despite our request, we catch it here
-            if (rawData.startsWith("<?xml")) {
-                status.innerText = "Error: WSDOT server is sending XML. Retrying...";
-                return;
-            }
-
-            const data = JSON.parse(rawData);
+            const data = await response.json();
             
             depList.innerHTML = '';
             arrList.innerHTML = '';
 
-            if (!data.TerminalComboDetails) return;
+            if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
+                status.innerText = "No ferry data available right now.";
+                return;
+            }
 
             data.TerminalComboDetails.forEach(route => {
                 route.Times.forEach(trip => {
-                    const time = trip.DepartingTime.split('T')[1].substring(0, 5);
-                    const [h, m] = time.split(':');
+                    // Time formatting (24h to 12h)
+                    const rawTime = trip.DepartingTime.split('T')[1].substring(0, 5);
+                    const [h, m] = rawTime.split(':');
                     const hr = parseInt(h);
-                    const ampm = hr >= 12 ? 'PM' : 'AM';
-                    const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${ampm}`;
+                    const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
+                    
+                    const vessel = trip.VesselName || "Vessel TBA";
+                    const destination = route.ArrivingDescription;
 
                     const card = `
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 ferry-card">
                             <div class="flex justify-between items-center">
-                                <span class="font-bold text-blue-900">${route.ArrivingDescription}</span>
+                                <span class="font-bold text-blue-900">${destination}</span>
                                 <span class="text-lg font-black text-blue-600">${displayTime}</span>
                             </div>
-                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">${trip.VesselName || "TBA"}</div>
+                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">${vessel}</div>
                         </div>
                     `;
 
+                    // Sort into Arrivals vs Departures
                     if (route.DepartingTerminalID === SEATTLE_ID) {
                         depList.innerHTML += card;
                     } else {
@@ -102,16 +95,17 @@
                 });
             });
 
-            status.innerText = `Live at ${new Date().toLocaleTimeString()}`;
+            status.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
 
         } catch (error) {
-            console.error("Technical details:", error);
-            status.innerText = "Connecting to WSDOT via Proxy...";
+            console.error("Fetch error:", error);
+            status.innerText = "Internal API Error. Make sure you deployed the /api folder to Vercel.";
         }
     }
 
+    // Run immediately and then every 60 seconds
     fetchFerryData();
-    setInterval(fetchFerryData, 60000); // Check every minute
+    setInterval(fetchFerryData, 60000);
 </script>
 
 </body>
