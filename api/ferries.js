@@ -1,55 +1,48 @@
 export default async function handler(req, res) {
-  // Use .trim() to ensure no accidental spaces/newlines break the URL
-  const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'.trim();
+  const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d';
   const { terminalId } = req.query;
   const tid = terminalId || '7';
   const today = new Date().toISOString().split('T')[0];
 
-  // 1. Build the URL strictly
-  const baseUrl = `https://www.wsdot.wa.gov/ferries/api/schedule/rest/terminalcombos/${today}/${tid}`;
-  const finalUrl = `${baseUrl}?apiaccesscode=${API_KEY}`;
+  // Try the most 'formal' version of the WCF REST URL
+  const url = `https://www.wsdot.wa.gov/ferries/api/schedule/rest/terminalcombos/${today}/${tid}/json?apiaccesscode=${API_KEY}`;
 
-  // 2. LOG THE URL (Check this in your Vercel Dashboard -> Logs)
-  console.log("FETCHING FROM WSDOT:", finalUrl);
+  console.log("SENDING REQUEST TO:", url);
 
   try {
-    const response = await fetch(finalUrl, {
+    const response = await fetch(url, {
       method: 'GET',
-      headers: { 
+      headers: {
         'Accept': 'application/json',
-        'Cache-Control': 'no-cache' 
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       }
     });
 
     const text = await response.text();
+    console.log("RAW RESPONSE PREVIEW:", text.substring(0, 100));
 
-    // Log the first 100 characters of the response to see if it's the Help Page
-    console.log("WSDOT RESPONSE START:", text.substring(0, 100));
-
-    // Manual XML Parser (if WSDOT ignores the JSON header)
-    if (text.trim().startsWith('<')) {
-      const combos = [];
-      const blocks = text.match(/<TerminalComboDetail>[\s\S]*?<\/TerminalComboDetail>/g) || [];
-      blocks.forEach(b => {
-        combos.push({
-          ArrivingDescription: b.match(/<ArrivingDescription>(.*?)<\/ArrivingDescription>/)?.[1],
-          DepartingTerminalID: b.match(/<DepartingTerminalID>(.*?)<\/DepartingTerminalID>/)?.[1],
-          Times: (b.match(/<TerminalTime>[\s\S]*?<\/TerminalTime>/g) || []).map(t => ({
-            DepartingTime: t.match(/<DepartingTime>(.*?)<\/DepartingTime>/)?.[1],
-            VesselName: t.match(/<VesselName>(.*?)<\/VesselName>/)?.[1] || "TBA"
-          }))
-        });
-      });
-      res.setHeader('Access-Control-Allow-Origin', '*');
-      return res.status(200).json({ TerminalComboDetails: combos });
+    // If we are still getting HTML, it means the REST endpoint is failing.
+    // Let's try the 'routes' endpoint as a fallback within the same function.
+    if (text.includes('<!DOCTYPE html')) {
+       console.log("REST failed, attempting fallback to routes endpoint...");
+       const fallbackUrl = `https://www.wsdot.wa.gov/ferries/api/schedule/rest/routes/${today}/${tid}/3?apiaccesscode=${API_KEY}`;
+       const fallbackRes = await fetch(fallbackUrl);
+       const fallbackText = await fallbackRes.text();
+       
+       // If this works, parse it and return
+       try {
+           const data = JSON.parse(fallbackText);
+           return res.status(200).json({ TerminalComboDetails: data });
+       } catch (e) {
+           return res.status(200).json({ error: "WSDOT Firewall Block", details: "Server is returning HTML only." });
+       }
     }
 
     const data = JSON.parse(text);
     res.setHeader('Access-Control-Allow-Origin', '*');
-    return res.status(200).json(data.TerminalComboDetails ? data : { TerminalComboDetails: data });
+    return res.status(200).json(data);
 
   } catch (error) {
-    console.error("PROXY_ERROR:", error.message);
-    return res.status(500).json({ error: "Fetch failed", details: error.message });
+    return res.status(500).json({ error: error.message });
   }
 }
