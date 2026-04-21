@@ -3,110 +3,82 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seattle Ferry LivE</title>
+    <title>Seattle Ferry Tracker</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
         .ferry-card { transition: transform 0.2s; }
         .ferry-card:hover { transform: translateY(-2px); }
     </style>
 </head>
-<body class="bg-slate-50 text-slate-900 min-h-screen">
+<body class="p-4 md:p-8">
 
-    <header class="bg-blue-700 text-white p-6 shadow-lg">
-        <div class="max-w-4xl mx-auto flex justify-between items-center">
-            <h1 class="text-2xl font-bold tracking-tight">Seattle Ferry LivE</h1>
-            <span class="text-sm bg-blue-600 px-3 py-1 rounded-full border border-blue-400">Terminal: Colman Dock</span>
+    <div class="max-w-4xl mx-auto">
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-8 gap-4">
+            <div>
+                <h1 class="text-3xl font-black text-slate-900 tracking-tight">Seattle Terminal</h1>
+                <p id="status" class="text-sm text-slate-500 font-medium">Connecting to WSDOT...</p>
+            </div>
+            <div class="flex gap-2">
+                <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold uppercase tracking-wider">Live Schedule</span>
+            </div>
         </div>
-    </header>
 
-    <main class="max-w-4xl mx-auto p-6">
-        <div id="status" class="mb-6 text-sm text-slate-500 italic">Updating real-time schedule...</div>
-
-        <div class="grid md:grid-cols-2 gap-6">
-            <section>
-                <h2 class="text-lg font-semibold mb-4 flex items-center">
-                    <span class="mr-2">🚢</span> Departures from Seattle
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            
+            <div>
+                <h2 class="text-lg font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center">
+                    <span class="mr-2">🚢</span> Departures
                 </h2>
                 <div id="departure-list" class="space-y-3">
                     </div>
-            </section>
+            </div>
 
-            <section>
-                <h2 class="text-lg font-semibold mb-4 flex items-center">
-                    <span class="mr-2">📍</span> Arrivals to Seattle
+            <div>
+                <h2 class="text-lg font-bold text-slate-400 uppercase tracking-widest mb-4 flex items-center">
+                    <span class="mr-2">⚓</span> Arrivals
                 </h2>
                 <div id="arrival-list" class="space-y-3">
                     </div>
-            </section>
+            </div>
+
         </div>
-    </main>
-<script>
-    const SEATTLE_ID = 7; 
+    </div>
 
-    async function fetchFerryData() {
-        const status = document.getElementById('status');
-        const depList = document.getElementById('departure-list');
-        const arrList = document.getElementById('arrival-list');
+    <script>
+        const SEATTLE_ID = 7; 
 
-        try {
-            // We call our internal API route instead of WSDOT directly.
-            // This bypasses CORS because it's a "same-origin" request.
-            const response = await fetch('/api/ferries');
-            
-            if (!response.ok) throw new Error('API route failed');
-            
-            const data = await response.json();
-            
-            depList.innerHTML = '';
-            arrList.innerHTML = '';
+        async function fetchFerryData() {
+            const status = document.getElementById('status');
+            const depList = document.getElementById('departure-list');
+            const arrList = document.getElementById('arrival-list');
 
-            if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
-                status.innerText = "No ferry data available right now.";
-                return;
-            }
+            try {
+                // Call your Vercel Serverless Function
+                const response = await fetch('/api/ferries');
+                
+                if (!response.ok) {
+                    throw new Error(`API Error (${response.status})`);
+                }
+                
+                const data = await response.json();
 
-            data.TerminalComboDetails.forEach(route => {
-                route.Times.forEach(trip => {
-                    // Time formatting (24h to 12h)
-                    const rawTime = trip.DepartingTime.split('T')[1].substring(0, 5);
-                    const [h, m] = rawTime.split(':');
-                    const hr = parseInt(h);
-                    const displayTime = `${((hr + 11) % 12 + 1)}:${m} ${hr >= 12 ? 'PM' : 'AM'}`;
-                    
-                    const vessel = trip.VesselName || "Vessel TBA";
-                    const destination = route.ArrivingDescription;
+                // Clear current lists
+                depList.innerHTML = '';
+                arrList.innerHTML = '';
 
-                    const card = `
-                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200 ferry-card">
-                            <div class="flex justify-between items-center">
-                                <span class="font-bold text-blue-900">${destination}</span>
-                                <span class="text-lg font-black text-blue-600">${displayTime}</span>
-                            </div>
-                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">${vessel}</div>
-                        </div>
-                    `;
+                if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
+                    status.innerText = "No ferry data available right now.";
+                    return;
+                }
 
-                    // Sort into Arrivals vs Departures
-                 if (route.DepartingTerminalID == 7 || route.DepartingTerminalName.includes("Seattle"))
-                        depList.innerHTML += card;
-                    } else {
-                        arrList.innerHTML += card;
-                    }
-                });
-            });
+                data.TerminalComboDetails.forEach(route => {
+                    // Logic to determine if this is a boat LEAVING Seattle
+                    const isDeparture = (route.DepartingTerminalID == SEATTLE_ID) || 
+                                        (route.DepartingTerminalName && route.DepartingTerminalName.toLowerCase().includes("seattle"));
 
-            status.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
+                    route.Times.forEach(trip => {
+                        if (!trip.DepartingTime) return;
 
-        } catch (error) {
-            console.error("Fetch error:", error);
-            status.innerText = "Internal API Error. Make sure you deployed the /api folder to Vercel.";
-        }
-    }
-
-    // Run immediately and then every 60 seconds
-    fetchFerryData();
-    setInterval(fetchFerryData, 60000);
-</script>
-
-</body>
-</html>
+                        // Formatting
