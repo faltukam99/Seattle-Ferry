@@ -3,72 +3,52 @@ export default async function handler(req, res) {
   const { terminalId } = req.query;
   const tid = terminalId || '7';
 
-  const soapUrl = 'https://www.wsdot.wa.gov/Ferries/API/Schedule/Service.svc';
-  
-  // WSDOT SOAP sometimes requires the date in MM/DD/YYYY for the "Schedule" service
-  const now = new Date();
-  const todayStr = `${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
+  // WSDOT requires current date in YYYY-MM-DD
+  const today = new Date().toISOString().split('T')[0];
 
-  const soapEnvelope = `
-    <soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/" xmlns:sch="http://www.wsdot.wa.gov/ferries/schedule/">
-       <soapenv:Header/>
-       <soapenv:Body>
-          <sch:GetTerminalCombo>
-             <sch:date>${todayStr}</sch:date>
-             <sch:terminalID>${tid}</sch:terminalID>
-             <sch:apiAccessCode>${API_KEY}</sch:apiAccessCode>
-          </sch:GetTerminalCombo>
-       </soapenv:Body>
-    </soapenv:Envelope>
-  `.trim();
+  // Map of origin terminals to their common destinations
+  const routeMap = {
+    "7": ["3", "4"],    // Seattle -> Bainbridge, Bremerton
+    "3": ["7"],         // Bainbridge -> Seattle
+    "4": ["7"],         // Bremerton -> Seattle
+    "9": ["15"],        // Edmonds -> Kingston
+    "15": ["9"],        // Kingston -> Edmonds
+    "11": ["22", "19"], // Fauntleroy -> Vashon, Southworth
+    "22": ["11", "19"], // Vashon -> Fauntleroy, Southworth
+    "19": ["11", "22"], // Southworth -> Fauntleroy, Vashon
+    "14": ["10"],       // Mukilteo -> Clinton
+    "10": ["14"],       // Clinton -> Mukilteo
+    "1": ["20", "21"]   // Anacortes -> Friday Harbor, Orcas
+  };
+
+  const destinations = routeMap[tid] || [];
 
   try {
-    const response = await fetch(soapUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'text/xml;charset=UTF-8',
-        'SOAPAction': 'http://www.wsdot.wa.gov/ferries/schedule/WSF_x0020_Schedule/GetTerminalCombo'
-      },
-      body: soapEnvelope
-    });
+    // Fetch all routes from this terminal in parallel
+    const requests = destinations.map(destId => 
+      fetch(`https://www.wsdot.wa.gov/ferries/api/schedule/rest/routes/${today}/${tid}/${destId}?apiaccesscode=${API_KEY}`)
+        .then(async r => {
+          if (!r.ok) return [];
+          return r.json();
+        })
+    );
 
-    const xml = await response.text();
+    const results = await Promise.all(requests);
+    const flatResults = results.flat();
 
-    // If the XML is empty or contains an error message, let's see it
-    if (xml.includes('Fault')) {
-        return res.status(200).json({ error: "SOAP Fault", raw: xml.substring(0, 200) });
-    }
-
-    const getTag = (str, tag) => {
-      const match = str.match(new RegExp(`<[^:]*?:?${tag}[^>]*>([\\s\\S]*?)<\\/[^:]*?:?${tag}>`, 'i'));
-      return match ? match[1] : null;
-    };
-
-    // Improved parsing to catch namespaced tags
-    const comboBlocks = xml.match(/<[^:]*?:?TerminalComboDetail>[\s\S]*?<\/[^:]*?:?TerminalComboDetail>/gi) || [];
-    
-    const combos = comboBlocks.map(block => {
-      const arriving = getTag(block, 'ArrivingDescription');
-      const depId = getTag(block, 'DepartingTerminalID');
-      const depName = getTag(block, 'DepartingTerminalName');
-      
-      const timeBlocks = block.match(/<[^:]*?:?TerminalTime>[\s\S]*?<\/[^:]*?:?TerminalTime>/gi) || [];
-      const times = timeBlocks.map(t => ({
-        DepartingTime: getTag(t, 'DepartingTime'),
-        VesselName: getTag(t, 'VesselName')
-      }));
-
-      return {
-        ArrivingDescription: arriving,
-        DepartingTerminalID: depId,
-        DepartingTerminalName: depName,
-        Times: times
-      };
-    });
+    // Standardize the data for our frontend
+    const formattedData = flatResults.map(route => ({
+      ArrivingDescription: route.ArrivingTerminalName,
+      DepartingTerminalID: route.DepartingTerminalID,
+      Times: (route.StopTimes || []).map(stop => ({
+        DepartingTime: stop.DepartureTime,
+        VesselName: stop.VesselName
+      }))
+    }));
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({ TerminalComboDetails: combos });
+    return res.status(200).json({ TerminalComboDetails: formattedData });
 
   } catch (error) {
     return res.status(500).json({ error: error.message });
