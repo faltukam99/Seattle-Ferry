@@ -3,42 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dynamic Ferry Tracker</title>
+    <title>Seattle Ferry Live</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap');
-        body { font-family: 'Inter', sans-serif; background-color: #f1f5f9; }
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
     </style>
 </head>
 <body class="p-6 md:p-10">
-bin
-    <div class="max-w-5xl mx-auto">
-        <header class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
-            <div>
-                <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Tracker</h1>
-                <div class="flex gap-4 mt-1">
-                    <span id="status" class="text-[10px] font-bold text-blue-500 uppercase tracking-widest">Live Syncing</span>
-                    <a id="debug-link" href="#" target="_blank" class="text-[10px] font-bold text-slate-400 hover:text-blue-500 uppercase underline">View Raw API Data ↗</a>
-                </div>
-            </div>
-            
-            <select id="terminal-select" class="w-full md:w-64 bg-slate-100 border-none rounded-xl px-4 py-3 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
+    <div class="max-w-4xl mx-auto">gin
+        <header class="bg-white p-6 rounded-3xl shadow-sm border border-slate-200 mb-8 flex justify-between items-center">
+            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Ferry Tracker</h1>
+            <select id="terminal-select" class="bg-slate-100 border-none rounded-xl px-4 py-2 font-bold text-slate-700 outline-none focus:ring-2 focus:ring-blue-500">
                 <option value="7">Seattle (Pier 52)</option>
                 <option value="3">Bainbridge Island</option>
                 <option value="4">Bremerton</option>
                 <option value="9">Edmonds</option>
-                <option value="15">Kingston</option>
-                <option value="11">Fauntleroy</option>
             </select>
         </header>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
             <section>
-                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Departures</h2>
+                <h2 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Departures</h2>
                 <div id="dep-list" class="space-y-3"></div>
             </section>
             <section>
-                <h2 class="text-xs font-black text-slate-400 uppercase tracking-widest mb-4 ml-2">Arrivals</h2>
+                <h2 class="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Arrivals</h2>
                 <div id="arr-list" class="space-y-3"></div>
             </section>
         </div>
@@ -46,48 +36,45 @@ bin
 
     <script>
         const terminalSelect = document.getElementById('terminal-select');
-        const debugLink = document.getElementById('debug-link');
-        const status = document.getElementById('status');
 
-        function parseTime(t) {
+        function formatTime(t) {
             if (!t) return "TBA";
-            const ms = parseInt(t.match(/\d+/)[0]);
-            return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+            const d = t.includes('Date') ? new Date(parseInt(t.match(/\d+/)[0])) : new Date(t);
+            return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         }
 
         async function update() {
             const tid = terminalSelect.value;
-            status.innerText = "Syncing...";
+            const res = await fetch(`/api/ferries?terminalId=${tid}`);
+            const data = await res.json();
             
-            try {
-                const r = await fetch(`/api/ferries?terminalId=${tid}`);
-                const data = await r.json();
-                
-                // Update the test URL for the user
-                debugLink.href = data.debugUrl;
+            const depList = document.getElementById('dep-list');
+            const arrList = document.getElementById('arr-list');
+            depList.innerHTML = arrList.innerHTML = '';
 
-                const depList = document.getElementById('dep-list');
-                const arrList = document.getElementById('arr-list');
-                depList.innerHTML = arrList.innerHTML = '';
+            let hasSailings = false;
 
-                data.routes.forEach(route => {
-                    const isDep = String(route.DepartingTerminalID) === String(tid);
+            data.routes.forEach(route => {
+                const isDep = String(route.DepartingTerminalID) === String(tid);
+                if (route.Sailings && route.Sailings.length > 0) {
+                    hasSailings = true;
                     route.Sailings.forEach(s => {
                         const card = `
-                            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex justify-between items-center">
+                            <div class="bg-white p-5 rounded-2xl border border-slate-100 shadow-sm flex justify-between items-center">
                                 <div>
-                                    <p class="text-[9px] font-black text-blue-500 uppercase mb-1">${isDep ? 'To' : 'From'} ${isDep ? route.ArrivingTerminalName : route.DepartingTerminalName}</p>
-                                    <p class="text-xl font-black text-slate-800">${parseTime(s.Time)}</p>
+                                    <p class="text-[9px] font-black text-blue-500 uppercase mb-1">${isDep ? 'To' : 'From'} ${route.ArrivingTerminalName}</p>
+                                    <p class="text-xl font-black text-slate-800">${formatTime(s.Time)}</p>
                                 </div>
-                                <p class="text-[10px] font-bold text-slate-300 uppercase">${s.Vessel}</p>
+                                <p class="text-[9px] font-bold text-slate-300 uppercase italic">${s.Vessel || 'TBA'}</p>
                             </div>`;
                         if (isDep) depList.innerHTML += card;
                         else arrList.innerHTML += card;
                     });
-                });
-                status.innerText = "Live";
-            } catch (err) {
-                status.innerText = "Error";
+                }
+            });
+
+            if (!hasSailings) {
+                depList.innerHTML = '<div class="p-6 bg-white rounded-2xl text-slate-400 text-sm italic">No data returned from WSDOT</div>';
             }
         }
 
