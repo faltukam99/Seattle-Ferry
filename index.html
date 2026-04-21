@@ -40,9 +40,9 @@
             </section>
         </div>
     </main>
-
- <script>
-     const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
+<script>
+    // Your verified API key and Terminal ID
+    const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
     const SEATTLE_ID = 7; 
 
     async function fetchFerryData() {
@@ -50,27 +50,30 @@
         const depList = document.getElementById('departure-list');
         const arrList = document.getElementById('arrival-list');
 
-        // This 'allorigins' proxy bypasses the CORS security block
+        // 1. Define the original URL
         const wsdotUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
+        
+        // 2. Wrap it in the AllOrigins proxy URL to bypass CORS
         const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(wsdotUrl)}`;
 
         try {
             const response = await fetch(proxyUrl);
+            if (!response.ok) throw new Error('Proxy server error');
+            
             const wrapper = await response.json();
-            const data = JSON.parse(wrapper.contents); // AllOrigins wraps the result in 'contents'
+            
+            // 3. The proxy returns the WSDOT data inside a string called 'contents'
+            const data = JSON.parse(wrapper.contents);
             
             depList.innerHTML = '';
             arrList.innerHTML = '';
 
-            // Use the data structure directly
-            const routes = data.TerminalComboDetails || [];
-            
-            if (routes.length === 0) {
-                status.innerText = "No ferries found for today.";
+            if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
+                status.innerText = "No ferry data available right now.";
                 return;
             }
 
-            routes.forEach(route => {
+            data.TerminalComboDetails.forEach(route => {
                 route.Times.forEach(trip => {
                     const time = trip.DepartingTime.split('T')[1].substring(0, 5);
                     const destination = route.ArrivingDescription;
@@ -86,8 +89,7 @@
                         </div>
                     `;
 
-                    // Check if we are departing FROM Seattle
-                    if (route.DepartingTerminalID === 7) {
+                    if (route.DepartingTerminalID === SEATTLE_ID) {
                         depList.innerHTML += card;
                     } else {
                         arrList.innerHTML += card;
@@ -95,18 +97,19 @@
                 });
             });
 
-            status.innerText = `Live data updated at ${new Date().toLocaleTimeString()}`;
+            status.innerText = `Last sync: ${new Date().toLocaleTimeString()}`;
 
         } catch (error) {
-            console.error("Full Error Details:", error);
-            status.innerText = "Check your browser console (F12) for the specific error.";
+            console.error("Fetch error:", error);
+            status.innerText = "Failed to bypass CORS. Try refreshing.";
         }
     }
 
+    // Initialize the app
     fetchFerryData();
-    setInterval(fetchFerryData, 120000); // Update every 2 minutes
+    // Refresh every 2 minutes
+    setInterval(fetchFerryData, 120000);
 </script>
-       
      
 
 </body>
