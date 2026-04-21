@@ -41,116 +41,73 @@
         </div>
     </main>
 
-    <script>
-        // REPLACE THIS WITH YOUR FREE KEY FROM WSDOT
-        const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
-        const SEATTLE_ID = 7; 
+ <script>
+     const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d'; 
+    const SEATTLE_ID = 7; 
 
-       
-async function fetchFerryData() {
-    const status = document.getElementById('status');
-    const depList = document.getElementById('departure-list');
-    const arrList = document.getElementById('arrival-list');
+    async function fetchFerryData() {
+        const status = document.getElementById('status');
+        const depList = document.getElementById('departure-list');
+        const arrList = document.getElementById('arrival-list');
 
-    // Use the exact base URL format that just worked for you
-    const url = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
+        // This 'allorigins' proxy bypasses the CORS security block
+        const wsdotUrl = `https://wsdot.wa.gov/Ferries/API/Schedule/rest/terminaltoday/${SEATTLE_ID}?apiaccesscode=${API_KEY}`;
+        const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(wsdotUrl)}`;
 
-    try {
-        const response = await fetch(url);
-        if (!response.ok) throw new Error('Network response was not ok');
-        
-        const data = await response.json();
-        
-        // Clear lists
-        depList.innerHTML = '';
-        arrList.innerHTML = '';
-
-        // WSDOT terminaltoday returns 'TerminalComboDetails'
-        data.TerminalComboDetails.forEach(route => {
-            route.Times.forEach(trip => {
-                // Determine if it's arriving or departing based on the description
-                // Usually, if the 'DepartingTerminalName' is Seattle, it's a departure.
-                const isDeparture = route.DepartingTerminalName.includes("Seattle");
-                
-                const card = `
-                    <div class="ferry-card bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                        <div class="flex justify-between items-center">
-                            <span class="font-medium text-blue-800">${route.Description}</span>
-                            <span class="text-lg font-bold">${trip.DepartingTime.split('T')[1].substring(0,5)}</span>
-                        </div>
-                        <div class="text-xs text-slate-400 mt-1 uppercase tracking-widest">
-                            ${trip.VesselName || 'Vessel TBA'}
-                        </div>
-                    </div>
-                `;
-
-                if (isDeparture) {
-                    depList.innerHTML += card;
-                } else {
-                    arrList.innerHTML += card;
-                }
-            });
-        });
-
-        status.innerText = `Last updated: ${new Date().toLocaleTimeString()}`;
-
-    } catch (error) {
-        status.innerText = "Connection successful, but schedule data format changed.";
-        console.error("Fetch error:", error);
-    }
-}
-
-        function renderSchedule(data) {
-    const depList = document.getElementById('departure-list');
-    const arrList = document.getElementById('arrival-list');
-    
-    // Clear the existing lists
-    depList.innerHTML = '';
-    arrList.innerHTML = '';
-
-    // The 'terminaltoday' endpoint returns an object called 'TerminalComboDetails'
-    if (!data.TerminalComboDetails || data.TerminalComboDetails.length === 0) {
-        depList.innerHTML = '<p class="text-sm text-slate-400">No scheduled departures found.</p>';
-        return;
-    }
-
-    data.TerminalComboDetails.forEach(route => {
-        // 'Times' is the array of individual ferry sailings
-        route.Times.forEach(trip => {
+        try {
+            const response = await fetch(proxyUrl);
+            const wrapper = await response.json();
+            const data = JSON.parse(wrapper.contents); // AllOrigins wraps the result in 'contents'
             
-            // Format the time (WSDOT returns "2026-04-21T14:35:00")
-            const rawTime = trip.DepartingTime.split('T')[1]; 
-            const formattedTime = rawTime.substring(0, 5); // Results in "14:35"
+            depList.innerHTML = '';
+            arrList.innerHTML = '';
 
-            const cardHtml = `
-                <div class="ferry-card bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium text-blue-900">${route.ArrivingDescription}</span>
-                        <span class="text-lg font-bold text-blue-600">${formattedTime}</span>
-                    </div>
-                    <div class="flex justify-between mt-2">
-                        <span class="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">
-                            ${trip.VesselName || 'Vessel TBA'}
-                        </span>
-                        ${trip.Annotation ? `<span class="text-[10px] text-orange-500 font-bold">⚠️ Alert</span>` : ''}
-                    </div>
-                </div>
-            `;
-
-            // If the departing terminal is Seattle (ID 7), it's a departure
-            if (route.DepartingTerminalID === 7) {
-                depList.innerHTML += cardHtml;
-            } else {
-                arrList.innerHTML += cardHtml;
+            // Use the data structure directly
+            const routes = data.TerminalComboDetails || [];
+            
+            if (routes.length === 0) {
+                status.innerText = "No ferries found for today.";
+                return;
             }
-        });
-    });
-}
 
-        // Run on load
-        fetchFerryData();
-        // Auto-refresh every 2 minutes
-        setInterval(fetchFerryData, 120000);
-    </script>
+            routes.forEach(route => {
+                route.Times.forEach(trip => {
+                    const time = trip.DepartingTime.split('T')[1].substring(0, 5);
+                    const destination = route.ArrivingDescription;
+                    const vessel = trip.VesselName || "Vessel TBA";
+
+                    const card = `
+                        <div class="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+                            <div class="flex justify-between items-center">
+                                <span class="font-bold text-blue-900">${destination}</span>
+                                <span class="text-lg font-black text-blue-600">${time}</span>
+                            </div>
+                            <div class="text-[10px] text-slate-400 mt-2 uppercase tracking-widest">${vessel}</div>
+                        </div>
+                    `;
+
+                    // Check if we are departing FROM Seattle
+                    if (route.DepartingTerminalID === 7) {
+                        depList.innerHTML += card;
+                    } else {
+                        arrList.innerHTML += card;
+                    }
+                });
+            });
+
+            status.innerText = `Live data updated at ${new Date().toLocaleTimeString()}`;
+
+        } catch (error) {
+            console.error("Full Error Details:", error);
+            status.innerText = "Check your browser console (F12) for the specific error.";
+        }
+    }
+
+    fetchFerryData();
+    setInterval(fetchFerryData, 120000); // Update every 2 minutes
+</script>
+       
+     
+
 </body>
 </html>
