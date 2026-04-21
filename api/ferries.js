@@ -1,66 +1,37 @@
 export default async function handler(req, res) {
   const API_KEY = '08c4d590-560c-49dd-9b30-e9089c77e02d';
-  const { terminalId } = req.query;
-  const tid = terminalId || '7';
   const today = new Date().toISOString().split('T')[0];
-
-  const matesUrl = `https://www.wsdot.wa.gov/ferries/api/schedule/rest/terminalmates/${today}/${tid}?apiaccesscode=${API_KEY}`;
+  
+  // Seattle routes according to WSDOT: 7 (Bainbridge) and 8 (Bremerton)
+  const routesToFetch = ['7', '8'];
 
   try {
-    // 1. Get Destinations
-    const mRes = await fetch(matesUrl, { headers: { 'Accept': 'application/json' } });
-    const mText = await mRes.text();
-    
-    let mateIds = [];
-    if (mText.trim().startsWith('<')) {
-      mateIds = (mText.match(/<TerminalID>(\d+)<\/TerminalID>/g) || [])
-                .map(m => m.replace(/<\/?TerminalID>/g, ''));
-    } else {
-      mateIds = JSON.parse(mText).map(m => m.TerminalID);
-    }
+    const requests = routesToFetch.map(routeId => 
+      fetch(`https://www.wsdot.wa.gov/ferries/api/schedule/rest/schedule/${today}/${routeId}?apiaccesscode=${API_KEY}`, {
+        headers: { 'Accept': 'application/json' }
+      }).then(r => r.json())
+    );
 
-    // 2. Fetch Sailings with Strict Headers
-    const routeRequests = mateIds.map(async (destId) => {
-      const url = `https://www.wsdot.wa.gov/ferries/api/schedule/rest/routes/${today}/${tid}/${destId}?apiaccesscode=${API_KEY}`;
-      const rRes = await fetch(url, { headers: { 'Accept': 'application/json' } });
-      const rText = await rRes.text();
+    const results = await Promise.all(requests);
 
-      // Parse XML or JSON
-      if (rText.trim().startsWith('<')) {
-        const routeName = rText.match(/<ArrivingTerminalName>(.*?)<\/ArrivingTerminalName>/)?.[1] || "Destination";
-        const depId = rText.match(/<DepartingTerminalID>(.*?)<\/DepartingTerminalID>/)?.[1] || tid;
-        const timeBlocks = rText.match(/<TerminalTime>[\s\S]*?<\/TerminalTime>/g) || [];
-        
-        return {
-          ArrivingTerminalName: routeName,
-          DepartingTerminalID: depId,
-          Sailings: timeBlocks.map(block => ({
-            Time: block.match(/<DepartingTime>(.*?)<\/DepartingTime>/)?.[1],
-            Vessel: block.match(/<VesselName>(.*?)<\/VesselName>/)?.[1] || "TBA"
-          }))
-        };
-      } else {
-        const route = JSON.parse(rText);
-        // Handle case where it returns a single object or an array
-        const actualRoute = Array.isArray(route) ? route[0] : route;
-        return {
-          ArrivingTerminalName: actualRoute.ArrivingTerminalName,
-          DepartingTerminalID: actualRoute.DepartingTerminalID,
-          Sailings: (actualRoute.StopTimes || []).map(s => ({ 
-            Time: s.DepartureTime, 
-            Vessel: s.VesselName 
-          }))
-        };
-      }
-    });
-
-    const routes = await Promise.all(routeRequests);
+    // Flatten all terminal combinations (Sailings) into one list
+    const allSailings = results.flatMap(routeData => 
+      (routeData.TerminalCombos || []).map(combo => ({
+        RouteName: routeData.ScheduleName,
+        DepartingTerminal: combo.DepartingTerminalName,
+        ArrivingTerminal: combo.ArrivingTerminalName,
+        Times: (combo.Times || []).map(t => ({
+          Time: t.DepartingTime,
+          Vessel: t.VesselName || "TBA"
+        }))
+      }))
+    );
 
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
-    return res.status(200).json({ routes, debugUrl: matesUrl });
+    return res.status(200).json({ routes: allSailings });
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(500).json({ error: "REST API Error", details: error.message });
   }
 }
